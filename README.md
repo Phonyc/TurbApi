@@ -16,8 +16,9 @@ Retour :
 {
     "jjmmyyy": {"borneId": "1234", "weekNumber": "12", "Reserved": False}
 }
-Si la date est passée ou n'est pas affichée, elle ne sera pas dans le dictionnaire retourné.
 ```
+Si la date est passée ou n'est pas affichée, elle ne sera pas dans le dictionnaire retourné.
+
 ### client.deresa_dates(dates: list[str])
 Déréserve pour les dates spécifiées.
 
