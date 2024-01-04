@@ -1,5 +1,10 @@
-import requests
+from io import BytesIO
+from json import dumps
+from urllib.parse import urlencode
+
+import certifi
 from bs4 import BeautifulSoup
+import pycurl
 
 
 class TurboCache:
@@ -19,6 +24,10 @@ class TurbApi:
         self.username = username
         self.password = password
         self.cache = TurboCache()
+        self.curl = pycurl.Curl()
+
+        with open("cookies.txt", "w") as f:
+            f.write("")
 
         self.connexion_infos = {
             '__LASTFOCUS': '',
@@ -33,29 +42,54 @@ class TurbApi:
             'ctl00$cntForm$btnConnexion': 'Connexion'
         }
         self.update_infos_connexion()
-        self.session = requests.Session()
         if not self._login():
             raise Exception('Login ou Mot de Passe Incorrect')
 
+    def get(self, url: str) -> str:
+        buffer = BytesIO()
+        self.curl.setopt(self.curl.URL, url)
+        self.curl.setopt(self.curl.WRITEDATA, buffer)
+        self.curl.setopt(self.curl.CAINFO, certifi.where())
+        self.curl.setopt(pycurl.COOKIEFILE, "cookies.txt")
+        self.curl.perform()
+        return buffer.getvalue().decode("utf-8")
+
+    def post(self, url: str, data: dict = None, json: dict = None, store_cookies: bool = False) -> str:
+        buffer = BytesIO()
+        self.curl.setopt(self.curl.URL, url)
+        self.curl.setopt(self.curl.WRITEDATA, buffer)
+        self.curl.setopt(self.curl.CAINFO, certifi.where())
+        if data:
+            self.curl.setopt(self.curl.POSTFIELDS, urlencode(data))
+            # If JSON data is provided, use it
+        elif json:
+            json_payload = dumps(json)
+            self.curl.setopt(self.curl.POSTFIELDS, json_payload)
+            self.curl.setopt(self.curl.HTTPHEADER, ['Content-Type: application/json'])
+        if store_cookies:
+            self.curl.setopt(pycurl.COOKIEJAR, "cookies.txt")
+        else:
+            self.curl.setopt(pycurl.COOKIEFILE, "cookies.txt")
+        self.curl.perform()
+        return buffer.getvalue().decode("utf-8")
+
     def update_infos_connexion(self):
-        req = requests.get('https://espacenumerique.turbo-self.com/Connexion.aspx')
-        page_bs4 = BeautifulSoup(req.text, 'html.parser')
+        self.get('https://espacenumerique.turbo-self.com/Connexion.aspx')
+        page_bs4 = BeautifulSoup(self.get('https://espacenumerique.turbo-self.com/Connexion.aspx'), 'html.parser')
         self.connexion_infos['__VIEWSTATE'] = page_bs4.find('input', {'id': '__VIEWSTATE'}).get('value')
         self.connexion_infos['__VIEWSTATEGENERATOR'] = page_bs4.find('input', {'id': '__VIEWSTATEGENERATOR'}).get(
             'value')
         self.connexion_infos['__EVENTVALIDATION'] = page_bs4.find('input', {'id': '__EVENTVALIDATION'}).get('value')
 
     def _login(self):
-        post_req = self.session.post('https://espacenumerique.turbo-self.com/Connexion.aspx', data=self.connexion_infos)
-        return 'mot de passe incorrect' not in post_req.text
+        return 'mot de passe incorrect' not in self.post('https://espacenumerique.turbo-self.com/Connexion.aspx', data=self.connexion_infos, store_cookies=True)
 
     def get_etat_dates(self, dates: list[str]) -> dict:
         """
         Retourne les états de la réservation aux jours spécifiés.
         """
         out = {}
-        req_resa = self.session.get('https://espacenumerique.turbo-self.com/ReserverRepas.aspx')
-        page_bs4 = BeautifulSoup(req_resa.text, 'html.parser')
+        page_bs4 = BeautifulSoup(self.get('https://espacenumerique.turbo-self.com/ReserverRepas.aspx'), 'html.parser')
         if self.cache.hoteid == '':
             self.cache.hoteid = page_bs4.find('input', id='ctl00_cntForm_hote_id').get('value')
         for date in dates:
@@ -83,8 +117,7 @@ class TurbApi:
                 print('Déréservation : ', date)
                 json_send = {"param": {"hoteId": self.cache.hoteid, "week": self.cache.etats[date]['weekNumber'],
                                        "day": date, "usage": "3"}}
-                self.session.post('https://espacenumerique.turbo-self.com/ServiceReservation.asmx/ClearReservation',
-                                  json=json_send)
+                self.post('https://espacenumerique.turbo-self.com/ServiceReservation.asmx/ClearReservation', json=json_send)
             else:
                 to_get_etats.append(date)
 
@@ -104,8 +137,8 @@ class TurbApi:
                                        "week": self.cache.etats[date]['weekNumber'],
                                        "borneId": self.cache.etats[date]['borneId'], "usage": "3"}}
 
-                self.session.post('https://espacenumerique.turbo-self.com/ServiceReservation.asmx/AddReservation',
-                                  json=json_send)
+                self.post('https://espacenumerique.turbo-self.com/ServiceReservation.asmx/AddReservation',json=json_send)
+
             else:
                 to_get_etats.append(date)
 
@@ -117,8 +150,7 @@ class TurbApi:
         """
         Pour obtenir les dèrnières opérations
         """
-        req = self.session.get('https://espacenumerique.turbo-self.com/Accueil.aspx')
-        page_bs4 = BeautifulSoup(req.text, 'html.parser')
+        page_bs4 = BeautifulSoup(self.get('https://espacenumerique.turbo-self.com/Accueil.aspx'), 'html.parser')
         table = page_bs4.find('table', id="ctl00_cntForm_gdvHistorique")
         out = []
         for row in table.find_all("tr")[1:]:
@@ -133,7 +165,6 @@ class TurbApi:
             Pour obtenir le solde courant
             :return: tuple[solde, devise]
         """
-        req = self.session.get('https://espacenumerique.turbo-self.com/CrediterCompte.aspx')
-        page_bs4 = BeautifulSoup(req.text, 'html.parser')
+        page_bs4 = BeautifulSoup(self.get('https://espacenumerique.turbo-self.com/CrediterCompte.aspx'), 'html.parser')
         txt = str(page_bs4.find('div', id="divModeArgent").div.find('span', {'class': 'prix'}).contents[0].strip())
         return float(txt[:-1].replace(',', '.')), txt[-1:],
