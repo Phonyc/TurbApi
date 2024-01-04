@@ -14,7 +14,7 @@ Retourne sous forme d'un dictionaire les états aux dates spécifiées.
 Retour : 
 ```python
 {
-    "jjmmyyy": {"borneId": "1234", "weekNumber": "12", "Reserved": False}
+    "jjmmyyyy": {"borneId": "1234", "weekNumber": "12", "Reserved": False}
 }
 ```
 Si la date est passée ou n'est pas affichée, elle ne sera pas dans le dictionnaire retourné.
